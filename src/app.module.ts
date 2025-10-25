@@ -2,16 +2,15 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { RedditModule } from './reddit/reddit.module';
+import { SubredditsController } from './reddit/subreddits.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    RedditModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, SubredditsController],
   providers: [AppService],
 })
 export class AppModule {}

@@ -177,6 +177,29 @@ export class RedditClient {
   }
 
   /**
+   * Ottiene una lista di subreddit popolari
+   */
+  async getPopularSubreddits(limit: number = 25): Promise<any> {
+    if (!this.accessToken) {
+      await this.authenticate();
+    }
+
+    try {
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+      });
+
+      const response = await this.httpClient.get(
+        `/subreddits/popular?${params.toString()}`
+      );
+
+      return response.data;
+    } catch (error) {
+      throw new Error(`Errore nel recupero dei subreddit popolari: ${error.message}`);
+    }
+  }
+
+  /**
    * Verifica se il client è autenticato
    */
   isAuthenticated(): boolean {
