@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { RedditClient } from '../../lib/reddit/reddit-client';
 import { SubredditFinder } from '../../lib/reddit/subreddit-finder';
-import { RedditCredentials } from '../../lib/reddit/reddit.interfaces';
+import {
+  RedditCredentials,
+  RedditPost,
+  RedditSubreddit,
+  SearchParams,
+  SubredditPostsParams,
+  RedditComment,
+  RedditConversation,
+  PostCommentsParams,
+} from '../../lib/reddit/reddit.interfaces';
 
 @Injectable()
 export class RedditService {
@@ -53,5 +62,22 @@ export class RedditService {
 
   async getUserInfo(username: string) {
     return this.redditClient.getUserInfo(username);
+  }
+
+  async getPostComments(params: PostCommentsParams): Promise<RedditComment[]> {
+    return this.redditClient.getPostComments(params);
+  }
+
+  async getConversation(subreddit: string, postId: string, commentsLimit?: number): Promise<RedditConversation> {
+    return this.redditClient.getConversation(subreddit, postId, commentsLimit);
+  }
+
+  async getSubredditConversations(
+    subreddit: string,
+    sort: 'hot' | 'new' | 'top' | 'rising' = 'hot',
+    limit: number = 10,
+    commentsPerPost: number = 50
+  ): Promise<RedditConversation[]> {
+    return this.redditClient.getSubredditConversations(subreddit, sort, limit, commentsPerPost);
   }
 }

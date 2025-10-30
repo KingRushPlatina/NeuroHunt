@@ -7,6 +7,10 @@ import {
   RedditAuthResponse,
   SearchParams,
   SubredditPostsParams,
+  RedditComment,
+  RedditCommentResponse,
+  RedditConversation,
+  PostCommentsParams,
 } from './reddit.interfaces.js';
 
 /**
@@ -348,5 +352,194 @@ export class RedditClient {
         'User-Agent': this.credentials.userAgent,
       },
     });
+  }
+
+  /**
+   * Ottiene i commenti di un post specifico
+   */
+  async getPostComments(params: PostCommentsParams): Promise<RedditComment[]> {
+    if (!this.accessToken) {
+      await this.authenticate();
+    }
+
+    try {
+      const {
+        subreddit,
+        postId,
+        sort = 'confidence',
+        limit = 100,
+        depth = 10
+      } = params;
+
+      const queryParams = new URLSearchParams({
+        sort,
+        limit: limit.toString(),
+        depth: depth.toString(),
+      });
+
+      const response = await this.httpClient.get(
+        `/r/${subreddit}/comments/${postId}?${queryParams.toString()}`
+      );
+
+      // La risposta contiene [post_data, comments_data]
+      const commentsData = response.data[1];
+      
+      if (!commentsData || !commentsData.data || !commentsData.data.children) {
+        return [];
+      }
+
+      return this.flattenComments(commentsData.data.children);
+    } catch (error) {
+      throw new Error(`Errore nel recupero dei commenti per il post ${params.postId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Ottiene una conversazione completa (post + commenti)
+   */
+  async getConversation(subreddit: string, postId: string, commentsLimit: number = 100): Promise<RedditConversation> {
+    if (!this.accessToken) {
+      await this.authenticate();
+    }
+
+    try {
+      const response = await this.httpClient.get(
+        `/r/${subreddit}/comments/${postId}?limit=${commentsLimit}`
+      );
+
+      // La risposta contiene [post_data, comments_data]
+      const postData = response.data[0];
+      const commentsData = response.data[1];
+
+      if (!postData || !postData.data || !postData.data.children || postData.data.children.length === 0) {
+        throw new Error('Post non trovato');
+      }
+
+      const post = postData.data.children[0].data;
+      const comments = commentsData && commentsData.data && commentsData.data.children 
+        ? this.flattenComments(commentsData.data.children)
+        : [];
+
+      return {
+        post: {
+          id: post.id,
+          title: post.title,
+          author: post.author,
+          subreddit: post.subreddit,
+          url: post.url,
+          selftext: post.selftext,
+          score: post.score,
+          num_comments: post.num_comments,
+          created_utc: post.created_utc,
+          permalink: post.permalink,
+        },
+        comments,
+        total_comments: post.num_comments || 0,
+      };
+    } catch (error) {
+      throw new Error(`Errore nel recupero della conversazione ${postId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Ottiene le conversazioni più popolari da un subreddit
+   */
+  async getSubredditConversations(
+    subreddit: string, 
+    sort: 'hot' | 'new' | 'top' | 'rising' = 'new',
+    limit: number = 10,
+    commentsPerPost: number = 50
+  ): Promise<RedditConversation[]> {
+    try {
+      // Prima ottieni i post
+      const postsResponse = await this.getSubredditPosts({
+        subreddit,
+        sort,
+        limit
+      });
+
+      if (!postsResponse.data || !postsResponse.data.children) {
+        return [];
+      }
+
+      const conversations: RedditConversation[] = [];
+
+      // Per ogni post, ottieni i commenti
+      for (const postChild of postsResponse.data.children) {
+        try {
+          const post = postChild.data;
+          const allComments = await this.getPostComments({
+            subreddit,
+            postId: post.id,
+            limit: commentsPerPost,
+            sort: 'top' // Ordina per i più popolari
+          });
+
+          // Filtra solo i commenti di primo livello (depth 0) e prendi i 2 più popolari
+          const topLevelComments = allComments
+            .filter(comment => comment.depth === 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 2);
+
+          conversations.push({
+            post,
+            comments: topLevelComments,
+            total_comments: post.num_comments || 0,
+          });
+
+          // Delay per rispettare i rate limits
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (commentError) {
+          console.warn(`Errore nel recupero commenti per post ${postChild.data.id}:`, commentError.message);
+          // Aggiungi il post senza commenti
+          conversations.push({
+            post: postChild.data,
+            comments: [],
+            total_comments: postChild.data.num_comments || 0,
+          });
+        }
+      }
+
+      return conversations;
+    } catch (error) {
+      throw new Error(`Errore nel recupero delle conversazioni da r/${subreddit}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Appiattisce la struttura annidata dei commenti Reddit
+   */
+  private flattenComments(children: any[], depth: number = 0): RedditComment[] {
+    const comments: RedditComment[] = [];
+
+    for (const child of children) {
+      if (child.kind === 't1' && child.data) { // t1 = comment
+        const commentData = child.data;
+        
+        const comment: RedditComment = {
+          id: commentData.id,
+          author: commentData.author,
+          body: commentData.body,
+          body_html: commentData.body_html,
+          score: commentData.score,
+          created_utc: commentData.created_utc,
+          parent_id: commentData.parent_id,
+          link_id: commentData.link_id,
+          subreddit: commentData.subreddit,
+          permalink: commentData.permalink,
+          depth,
+        };
+
+        comments.push(comment);
+
+        // Processa le risposte ricorsivamente
+        if (commentData.replies && commentData.replies.data && commentData.replies.data.children) {
+          const replies = this.flattenComments(commentData.replies.data.children, depth + 1);
+          comments.push(...replies);
+        }
+      }
+    }
+
+    return comments;
   }
 }

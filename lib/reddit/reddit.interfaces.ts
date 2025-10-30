@@ -101,3 +101,46 @@ export interface SubredditPostsParams {
   before?: string;
   time?: 'hour' | 'day' | 'week' | 'month' | 'year' | 'all';
 }
+
+/**
+ * Struttura di un commento Reddit
+ */
+export interface RedditComment {
+  id: string;
+  author: string;
+  body: string;
+  body_html: string;
+  score: number;
+  created_utc: number;
+  parent_id: string;
+  link_id: string;
+  subreddit: string;
+  permalink: string;
+  replies?: RedditCommentResponse;
+  depth: number;
+}
+
+/**
+ * Risposta specifica per i commenti
+ */
+export interface RedditCommentResponse extends RedditResponse<RedditComment> {}
+
+/**
+ * Struttura completa di una conversazione (post + commenti)
+ */
+export interface RedditConversation {
+  post: RedditPost;
+  comments: RedditComment[];
+  total_comments: number;
+}
+
+/**
+ * Parametri per ottenere commenti di un post
+ */
+export interface PostCommentsParams {
+  subreddit: string;
+  postId: string;
+  sort?: 'confidence' | 'top' | 'new' | 'controversial' | 'old' | 'random' | 'qa' | 'live';
+  limit?: number;
+  depth?: number;
+}
