@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AIProvider, AIMessage, AIResponse, AIGenerationOptions, ConversationAnalysis } from './ai.interfaces';
+import { ConversationAnalysisParser, ConversationAnalysisData } from '../utilities/json-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -125,19 +126,44 @@ ${comments.map((comment, index) => `${index + 1}. ${comment}`).join('\n')}`;
         { role: 'user', content: userPrompt }
       ], options);
 
-      // Parse the JSON response
-      const analysis = JSON.parse(response.content);
+      console.log('Raw AI response:', response.content);
+
+      // Utilizza la nuova utility per il parsing JSON
+      const parseResult = ConversationAnalysisParser.parseConversationAnalysis(response.content);
       
-      return {
-        idealevel: analysis.idealevel,
-        possiblereturn: analysis.possiblereturn,
-        problem: analysis.problem,
-        solution: analysis.solution,
-        confidence: 0.9 // Higher confidence with detailed prompt
-      };
+      if (parseResult.success && parseResult.data) {
+        return {
+          idealevel: parseResult.data.idealevel,
+          possiblereturn: parseResult.data.possiblereturn,
+          problem: parseResult.data.problem,
+          solution: parseResult.data.solution,
+          confidence: 0.9 // Higher confidence with detailed prompt
+        };
+      } else {
+        console.error('JSON parsing failed:', parseResult.error);
+        console.error('Raw response:', response.content);
+        
+        // Utilizza il fallback della utility
+        const fallbackData = ConversationAnalysisParser.createFallbackAnalysis(parseResult.error || 'Unknown parsing error');
+        return {
+          idealevel: fallbackData.idealevel,
+          possiblereturn: fallbackData.possiblereturn,
+          problem: fallbackData.problem,
+          solution: fallbackData.solution,
+          confidence: 0.1
+        };
+      }
     } catch (error) {
       console.error('Error analyzing Reddit conversation:', error);
-      throw new Error('Failed to analyze conversation');
+      
+      const fallbackData = ConversationAnalysisParser.createFallbackAnalysis(error.message);
+      return {
+        idealevel: fallbackData.idealevel,
+        possiblereturn: fallbackData.possiblereturn,
+        problem: fallbackData.problem,
+        solution: fallbackData.solution,
+        confidence: 0.1
+      };
     }
   }
 
