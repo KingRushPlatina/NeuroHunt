@@ -15,7 +15,6 @@ export class RedditService {
       userAgent: process.env.REDDIT_USER_AGENT || 'NeuroHunt/1.0.0'
     };
 
-    // Validazione delle credenziali
     if (!credentials.clientId || !credentials.clientSecret) {
       throw new Error('Reddit credentials are not properly configured. Please check REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET environment variables.');
     }
