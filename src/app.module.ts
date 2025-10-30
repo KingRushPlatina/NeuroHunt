@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { RedditModule } from './reddit/reddit.module';
+import { AIModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -10,7 +11,8 @@ import { RedditModule } from './reddit/reddit.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    RedditModule
+    RedditModule,
+    AIModule
   ],
   controllers: [AppController],
   providers: [AppService],
