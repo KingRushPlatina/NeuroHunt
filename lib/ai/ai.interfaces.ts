@@ -55,6 +55,8 @@ export interface ConversationAnalysis {
   problem: string;
   solution: string;
   confidence?: number;
+  rawResponse?: string; // Risposta grezza dell'AI per debug
+  rawRequest?: string; // Richiesta inviata all'AI per debug
 }
 
 export interface RedditConversationAI {

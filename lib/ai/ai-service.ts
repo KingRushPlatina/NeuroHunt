@@ -19,11 +19,11 @@ export class AIService {
 
   
   async analyzeConversation(
-    postTitle: string,
+    mainPost: string,
     comments: string[]
   ): Promise<ConversationAnalysis> {
     try {
-      const analysis = await this.geminiClient.analyzeRedditConversation(postTitle, comments);
+      const analysis = await this.geminiClient.analyzeRedditConversation(mainPost, comments);
       this.logger.debug('Conversation analyzed successfully');
       return analysis;
     } catch (error) {

@@ -27,18 +27,51 @@ export class JsonParser {
         };
       }
 
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-      const jsonString = jsonMatch ? jsonMatch[0] : rawContent.trim();
+      // Rimuove blocchi markdown se presenti (es. ```json...```)
+      let cleanContent = rawContent.trim();
+      if (cleanContent.startsWith('```json')) {
+        cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanContent.startsWith('```')) {
+        cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+      
+      // Cerca il JSON più accuratamente
+      let jsonString = cleanContent.trim();
+      
+      // Se non inizia con {, cerca il primo JSON valido
+      if (!jsonString.startsWith('{')) {
+        const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonString = jsonMatch[0];
+        }
+      }
+      
+      // Se il JSON è troncato, prova a trovare l'ultimo } valido
+      if (jsonString.startsWith('{') && !jsonString.endsWith('}')) {
+        const lastBraceIndex = jsonString.lastIndexOf('}');
+        if (lastBraceIndex > 0) {
+          jsonString = jsonString.substring(0, lastBraceIndex + 1);
+        }
+      }
+      
+      // Sanitizza il JSON per gestire stringhe malformate
+      jsonString = this.sanitizeJsonString(jsonString);
 
       // Parsing JSON
       let parsedData: T;
       try {
         parsedData = JSON.parse(jsonString);
       } catch (parseError) {
-        return {
-          success: false,
-          error: `Invalid JSON format: ${parseError.message}`
-        };
+        // Tentativo di riparazione automatica per stringhe non terminate
+        try {
+          const repairedJson = this.repairJsonString(jsonString);
+          parsedData = JSON.parse(repairedJson);
+        } catch (repairError) {
+          return {
+            success: false,
+            error: `Invalid JSON format: ${parseError.message}`
+          };
+        }
       }
 
       // Validazione campi obbligatori
@@ -84,12 +117,109 @@ export class JsonParser {
    * @returns Stringa JSON pulita
    */
   static sanitizeJsonString(jsonString: string): string {
-    return jsonString
-      .trim()
-      .replace(/^[^{]*/, '') // Rimuove tutto prima della prima parentesi graffa
-      .replace(/[^}]*$/, '') // Rimuove tutto dopo l'ultima parentesi graffa
-      .replace(/\n/g, ' ') // Sostituisce newline con spazi
-      .replace(/\s+/g, ' '); // Normalizza spazi multipli
+    let cleaned = jsonString.trim();
+    
+    // Se il JSON è già ben formato, non modificarlo
+    if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
+      return cleaned;
+    }
+    
+    // Trova la prima { e l'ultima } per estrarre il JSON
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+    
+    return cleaned;
+  }
+
+  /**
+   * Tenta di riparare una stringa JSON malformata
+   * @param jsonString - Stringa JSON da riparare
+   * @returns Stringa JSON riparata
+   */
+  static repairJsonString(jsonString: string): string {
+    let repaired = jsonString.trim();
+    
+    // Controlla se il JSON è completamente vuoto o troncato
+    if (!repaired || repaired.length === 0) {
+      return '{"idealevel": 1, "possiblereturn": null, "problem": "Empty response", "solution": "Please try again"}';
+    }
+    
+    // Se non inizia con { o [, probabilmente è testo semplice
+    if (!repaired.startsWith('{') && !repaired.startsWith('[')) {
+      return '{"idealevel": 1, "possiblereturn": null, "problem": "Invalid JSON format", "solution": "Please try again"}';
+    }
+    
+    // Gestisce JSON troncato improvvisamente (Unexpected end of JSON input)
+    if (repaired.endsWith(',') || repaired.endsWith(':')) {
+      // Rimuovi caratteri trailing problematici
+      repaired = repaired.replace(/[,:]+$/, '');
+    }
+    
+    // Gestisce stringhe non terminate
+    const openQuotes = (repaired.match(/"/g) || []).length;
+    if (openQuotes % 2 !== 0) {
+      // Numero dispari di virgolette, aggiungi una virgoletta di chiusura
+      const lastQuoteIndex = repaired.lastIndexOf('"');
+      const afterLastQuote = repaired.substring(lastQuoteIndex + 1);
+      
+      // Se dopo l'ultima virgoletta c'è solo spazio bianco o caratteri di controllo
+      if (/^[\s,}\]]*$/.test(afterLastQuote)) {
+        repaired = repaired.substring(0, lastQuoteIndex + 1) + '"' + afterLastQuote;
+      } else {
+        // Trova la posizione migliore per chiudere la stringa
+        const commaIndex = afterLastQuote.indexOf(',');
+        const braceIndex = afterLastQuote.indexOf('}');
+        const insertIndex = Math.min(
+          commaIndex === -1 ? Infinity : commaIndex,
+          braceIndex === -1 ? Infinity : braceIndex
+        );
+        
+        if (insertIndex !== Infinity) {
+          repaired = repaired.substring(0, lastQuoteIndex + 1) + 
+                    afterLastQuote.substring(0, insertIndex) + '"' + 
+                    afterLastQuote.substring(insertIndex);
+        } else {
+          repaired += '"';
+        }
+      }
+    }
+    
+    // Gestisce parentesi graffe non bilanciate
+    const openBraces = (repaired.match(/\{/g) || []).length;
+    const closeBraces = (repaired.match(/\}/g) || []).length;
+    
+    if (openBraces > closeBraces) {
+      repaired += '}'.repeat(openBraces - closeBraces);
+    } else if (closeBraces > openBraces) {
+      // Rimuovi parentesi graffe in eccesso
+      let braceCount = 0;
+      let result = '';
+      for (let i = 0; i < repaired.length; i++) {
+        const char = repaired[i];
+        if (char === '{') {
+          braceCount++;
+          result += char;
+        } else if (char === '}') {
+          if (braceCount > 0) {
+            braceCount--;
+            result += char;
+          }
+          // Ignora le parentesi graffe in eccesso
+        } else {
+          result += char;
+        }
+      }
+      repaired = result;
+    }
+    
+    // Rimuove virgole trailing
+    repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+    
+    return repaired;
   }
 }
 

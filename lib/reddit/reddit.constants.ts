@@ -53,28 +53,9 @@ export const REDDIT_CONSTANTS = {
   ],
 
   // Keywords per subreddit importanti
-  IMPORTANT_KEYWORDS: [
-    'business', 'startup', 'entrepreneur', 'side hustle', 'small business',
-    'marketing', 'ecommerce', 'dropshipping', 'freelance', 'productivity',
-    'automation', 'management', 'sales', 'finance', 'investing',
-    'passive income', 'lead generation', 'branding', 'growth hacking', 'innovation',
-    'crypto', 'cryptocurrency', 'bitcoin', 'ethereum', 'blockchain',
-    'defi', 'trading', 'nft', 'web3', 'metaverse',
-    'investment', 'stocks', 'forex', 'financial freedom', 'money management',
-    'personal finance', 'economy', 'tokens', 'altcoins', 'mining',
-    'technology', 'programming', 'coding', 'software development', 'ai',
-    'machine learning', 'data science', 'cloud', 'cybersecurity', 'saas',
-    'web development', 'mobile apps', 'open source', 'automation tools', 'startups',
-    'api', 'devops', 'hackathon', 'product design', 'ui ux',
-    'self improvement', 'motivation', 'discipline', 'habits', 'mindset',
-    'success', 'focus', 'mental health', 'time management', 'goal setting',
-    'productivity', 'learning', 'education', 'career growth', 'leadership',
-    'personal development', 'decision making', 'confidence', 'resilience', 'minimalism',
-    'home', 'cleaning', 'organization', 'fitness', 'health',
-    'nutrition', 'relationships', 'travel', 'pets', 'family',
-    'time saving', 'budgeting', 'shopping', 'sustainability', 'eco friendly',
-    'food', 'housing', 'work life balance', 'automation at home', 'DIY'
-  ],
+ IMPORTANT_KEYWORDS: [
+  'innovation'
+],
 } as const;
 
 /**

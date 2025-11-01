@@ -27,11 +27,32 @@ export class GeminiClient implements AIProvider {
           topP: options.topP || 0.9,
         },
       });
-
       const prompt = this.convertMessagesToPrompt(messages);
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
+      
+      // Estrazione più robusta del testo
+      let text = '';
+      try {
+        text = response.text();
+      } catch (error) {
+        console.warn('Error extracting text with response.text():', error.message);
+        // Fallback: prova ad estrarre il testo dai candidates
+        if (response.candidates && response.candidates.length > 0) {
+          const candidate = response.candidates[0];
+          if (candidate.content && candidate.content.parts) {
+            text = candidate.content.parts.map(part => part.text || '').join('');
+          }
+        }
+      }
+      
+      console.log('Gemini raw response structure:', {
+        hasResponse: !!response,
+        hasCandidates: !!(response.candidates && response.candidates.length > 0),
+        candidatesCount: response.candidates ? response.candidates.length : 0,
+        textLength: text.length,
+        textPreview: text.substring(0, 200)
+      });
 
       return {
         content: text,
@@ -112,49 +133,20 @@ export class GeminiClient implements AIProvider {
     options: AIGenerationOptions = {}
   ): Promise<ConversationAnalysis> {
     try {
-      const systemPrompt = this.getSystemPrompt();
-
-      const userPrompt = `Analyze this Reddit conversation for business opportunities and insights:
-
-Main Post: ${mainPost}
-
-Comments:
-${comments.map((comment, index) => `${index + 1}. ${comment}`).join('\n')}`;
-
-      const response = await this.generateResponse([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ], options);
-
-      console.log('Raw AI response:', response.content);
-
-      // Utilizza la nuova utility per il parsing JSON
-      const parseResult = ConversationAnalysisParser.parseConversationAnalysis(response.content);
-      
-      if (parseResult.success && parseResult.data) {
-        return {
-          idealevel: parseResult.data.idealevel,
-          possiblereturn: parseResult.data.possiblereturn,
-          problem: parseResult.data.problem,
-          solution: parseResult.data.solution,
-          confidence: 0.9 // Higher confidence with detailed prompt
-        };
-      } else {
-        console.error('JSON parsing failed:', parseResult.error);
-        console.error('Raw response:', response.content);
-        
-        // Utilizza il fallback della utility
-        const fallbackData = ConversationAnalysisParser.createFallbackAnalysis(parseResult.error || 'Unknown parsing error');
-        return {
-          idealevel: fallbackData.idealevel,
-          possiblereturn: fallbackData.possiblereturn,
-          problem: fallbackData.problem,
-          solution: fallbackData.solution,
-          confidence: 0.1
-        };
+      // Prova prima con l'approccio JSON strutturato
+      const jsonResult = await this.tryJsonAnalysis(mainPost, comments, options);
+      if (jsonResult) {
+        return jsonResult;
       }
+      
+      // Fallback: approccio semplificato senza JSON
+      console.log('JSON approach failed, trying simplified approach...');
+      return await this.trySimplifiedAnalysis(mainPost, comments, options);
+      
     } catch (error) {
       console.error('Error analyzing Reddit conversation:', error);
+      
+      const fullRequest = `System: ${this.getSystemPrompt()}\n\nUser: Analyze this Reddit conversation for business opportunities and insights:\n\nMain Post: ${mainPost}\n\nComments:\n${comments.map((comment, index) => `${index + 1}. ${comment}`).join('\n')}`;
       
       const fallbackData = ConversationAnalysisParser.createFallbackAnalysis(error.message);
       return {
@@ -162,9 +154,116 @@ ${comments.map((comment, index) => `${index + 1}. ${comment}`).join('\n')}`;
         possiblereturn: fallbackData.possiblereturn,
         problem: fallbackData.problem,
         solution: fallbackData.solution,
-        confidence: 0.1
+        confidence: 0.1,
+        rawResponse: `Error: ${error.message}`,
+        rawRequest: fullRequest
       };
     }
+  }
+
+  private async tryJsonAnalysis(
+    mainPost: string,
+    comments: string[],
+    options: AIGenerationOptions
+  ): Promise<ConversationAnalysis | null> {
+    try {
+      const systemPrompt = this.getSystemPrompt();
+      const userPrompt = `Analyze this Reddit conversation for business opportunities and insights:\n\nMain Post: ${mainPost}\n\nComments:\n${comments.map((comment, index) => `${index + 1}. ${comment}`).join('\n')}`;
+      const fullRequest = `System: ${systemPrompt}\n\nUser: ${userPrompt}`;
+
+      const response = await this.generateResponse([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ], options);
+
+      console.log('Raw AI response:', response.content);
+      console.log('Raw AI response length:', response.content.length);
+      console.log('Raw AI response starts with:', response.content.substring(0, 100));
+
+      if (!response.content || response.content.trim().length === 0) {
+        console.warn('Empty response from AI, trying fallback approach');
+        return null;
+      }
+
+      const parseResult = ConversationAnalysisParser.parseConversationAnalysis(response.content);
+      console.log('Parse result:', parseResult);
+      
+      if (parseResult.success && parseResult.data) {
+        return {
+          idealevel: parseResult.data.idealevel,
+          possiblereturn: parseResult.data.possiblereturn,
+          problem: parseResult.data.problem,
+          solution: parseResult.data.solution,
+          confidence: 0.9,
+          rawResponse: response.content,
+          rawRequest: fullRequest
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn('JSON analysis failed:', error.message);
+      return null;
+    }
+  }
+
+  private async trySimplifiedAnalysis(
+    mainPost: string,
+    comments: string[],
+    options: AIGenerationOptions
+  ): Promise<ConversationAnalysis> {
+    const simplifiedPrompt = `Analyze this Reddit conversation and provide a simple assessment:\n\nMain Post: ${mainPost}\n\nComments:\n${comments.map((comment, index) => `${index + 1}. ${comment}`).join('\n')}\n\nPlease provide:\n1. Business opportunity level (1-5)\n2. Main problem discussed\n3. Potential solution\n4. Your confidence in this analysis (0.1-1.0)`;
+    
+    const fullRequest = `User: ${simplifiedPrompt}`;
+
+    try {
+      const response = await this.generateResponse([
+        { role: 'user', content: simplifiedPrompt }
+      ], options);
+
+      console.log('Simplified analysis response:', response.content);
+      
+      // Parsing semplificato basato su pattern
+      const content = response.content || '';
+      const idealevel = this.extractNumberFromText(content, /(?:level|livello)[:\s]*(\d+)/i) || 2;
+      const confidence = this.extractNumberFromText(content, /confidence[:\s]*([0-9.]+)/i) || 0.5;
+      
+      // Estrai problema e soluzione con regex semplici
+      const problemMatch = content.match(/(?:problem|problema)[:\s]*([^\n]+)/i);
+      const solutionMatch = content.match(/(?:solution|soluzione)[:\s]*([^\n]+)/i);
+      
+      return {
+        idealevel: Math.min(5, Math.max(1, idealevel)),
+        possiblereturn: null,
+        problem: problemMatch ? problemMatch[1].trim() : 'Business opportunity identified in conversation',
+        solution: solutionMatch ? solutionMatch[1].trim() : 'Further analysis recommended',
+        confidence: Math.min(1.0, Math.max(0.1, confidence)),
+        rawResponse: response.content,
+        rawRequest: fullRequest
+      };
+    } catch (error) {
+      console.error('Simplified analysis also failed:', error);
+      
+      const fallbackData = ConversationAnalysisParser.createFallbackAnalysis('All analysis methods failed');
+      return {
+        idealevel: fallbackData.idealevel,
+        possiblereturn: fallbackData.possiblereturn,
+        problem: fallbackData.problem,
+        solution: fallbackData.solution,
+        confidence: 0.1,
+        rawResponse: `Fallback analysis due to error: ${error.message}`,
+        rawRequest: fullRequest
+      };
+    }
+  }
+
+  private extractNumberFromText(text: string, regex: RegExp): number | null {
+    const match = text.match(regex);
+    if (match && match[1]) {
+      const num = parseFloat(match[1]);
+      return isNaN(num) ? null : num;
+    }
+    return null;
   }
 
   async summarizePost(title: string, content: string): Promise<string> {

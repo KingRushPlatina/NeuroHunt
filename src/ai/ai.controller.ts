@@ -11,20 +11,20 @@ export class AIController {
   @Post('analyze')
   async analyzeConversation(
     @Body() body: {
-      postTitle: string;
+      mainPost: string;
       comments: string[];
     }
   ) {
     try {
-      if (!body.postTitle || !Array.isArray(body.comments)) {
+      if (!body.mainPost || !Array.isArray(body.comments)) {
         throw new HttpException(
-          'postTitle and comments array are required',
+          'mainPost and comments array are required',
           HttpStatus.BAD_REQUEST
         );
       }
 
       const analysis = await this.aiService.analyzeConversation(
-        body.postTitle,
+        body.mainPost,
         body.comments
       );
 
